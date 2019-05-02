@@ -51,7 +51,7 @@ void read(FILE* file, const size_t bytes, void* obj_void) {
 
     // Read size. It's stored as a big-endian 4-byte unsigned int.
     size_t record_size = 0;
-    for (int i = 0; i < kRecordSizeSize; i++) {
+    for (size_t i = 0; i < kRecordSizeSize; i++) {
       int byte = fgetc(file);
       if (byte == EOF) {
         throw ReadCrateException("Crate file was truncated when reading record size.");
