@@ -168,7 +168,8 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
   // TODO This does not correctly handle subcrates.
   for (std::filesystem::path crate_path : std::filesystem::directory_iterator(crates_dir_path)) {
     if (crate_path.extension() != ".crate") {
-      // Skip files like "database V2" and any other miscellaneous files.
+      // All files in this folder should be .crate files, but just in case skip file if it doesn't
+      // have .crate extension.
       continue;
     }
 
