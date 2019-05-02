@@ -14,8 +14,8 @@
 //
 // This file starts with some forward declarations. Then, we define templated read<T>() and
 // read_repeated<T>() functions for reading objects from .crate files, along with specializations
-// of read<T>() for primitive datatypes. Finally, we specify which fields each object type has and
-// how they should be read from disk.
+// of read<T>() for primitive datatypes. Finally, we specify kFields for each object type. kFields
+// describes the object's fields and how to read them.
 //
 // For more information, including the specifics of the on-disk format, see
 // https://www.mixxx.org/wiki/doku.php/serato_database_format
@@ -31,7 +31,8 @@ struct Field {
 template<typename T>
 const std::map<std::string, Field> kFields;
 
-// Next, the definition of read<T>() for composite objects.
+// Next, the definition of read<T>() for objects. Objects aren't primitive datatypes but instead
+// contain several fields, each of which may be a primitive datatype or another object.
 const size_t kTagSize = 4;
 const size_t kRecordSizeSize = 4;
 
@@ -134,8 +135,8 @@ std::unique_ptr<Crate> readCrate(const std::string& path) {
   return ret;
 }
 
-// Finally, the rest of this file specifies the structure of .crate files, including how each
-// object should be read from disk.
+// Finally, the rest of this file gives kFields for each object type. kFields specifies what
+// fields the type has and how they should be read from disk.
 
 // Note: make sure that the readfunc you specify matches the type of the member! In particular,
 // you must use read_repeated iff the member is a std::vector. Otherwise you'll get weird crashes
