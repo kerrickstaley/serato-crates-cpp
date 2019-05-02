@@ -46,7 +46,9 @@ void read(FILE* file, const size_t bytes, void* obj_void) {
     // Read tag.
     std::string tag(kTagSize, '\0');
     if (kTagSize != fread(tag.data(), 1, kTagSize, file)) {
-      throw ReadCrateException("Crate file was truncated when reading tag.");
+      throw ReadException(
+          "File was truncated when reading tag (at offset "
+          + std::to_string(ftell(file)) + ")!");
     }
     bytes_read += kTagSize;
 
@@ -55,8 +57,11 @@ void read(FILE* file, const size_t bytes, void* obj_void) {
     for (size_t i = 0; i < kRecordSizeSize; i++) {
       int byte = fgetc(file);
       if (byte == EOF) {
-        throw ReadCrateException("Crate file was truncated when reading record size.");
+        throw ReadException(
+            "File was truncated when reading field size (at offset "
+            + std::to_string(ftell(file)) + ")!");
       }
+      record_size <<= 8;
       record_size += byte;
     }
     bytes_read += kRecordSizeSize;
@@ -83,13 +88,13 @@ void read<std::string>(FILE* file, const size_t bytes, void* str_void) {
     char16_t c = 0;
     int b = fgetc(file);
     if (b == EOF) {
-      throw ReadCrateException("Crate file was truncated when reading string");
+      throw ReadException("Crate file was truncated when reading string");
     }
     c |= b << 8;
 
     b = fgetc(file);
     if (b == EOF) {
-      throw ReadCrateException("Crate file was truncated when reading string");
+      throw ReadException("Crate file was truncated when reading string");
     }
     c |= b;
     utf16_string += c;
@@ -111,18 +116,18 @@ void read_repeated(FILE* file, const size_t bytes, void* obj_vec_void) {
 }
 
 // Next, definition of readCrate.
-std::unique_ptr<Crate> readCrate(const std::string& path) {
-  std::unique_ptr<Crate> ret = std::make_unique<Crate>();
+std::unique_ptr<CrateFile> readCrate(const std::string& path) {
+  std::unique_ptr<CrateFile> ret = std::make_unique<CrateFile>();
 
   // The crate's name is not actually stored in the .crate file itself; it's only stored in the
   // filename.
-  // Populate ret->name based on the filename, then call read<Crate>() to do the rest of the work.
+  // Populate ret->name based on the filename, then call read<CrateFile>() to do the rest of the
+  // work.
   ret->name = std::filesystem::path(path).stem();
 
   FILE* fin = fopen(path.c_str(), "r");
-
   if (fin == nullptr) {
-    throw ReadCrateException("Could not open .crate file at path " + path);
+    throw ReadException("Could not open .crate file at path " + path);
   }
 
   fseek(fin, 0, SEEK_END);
@@ -130,7 +135,48 @@ std::unique_ptr<Crate> readCrate(const std::string& path) {
   fseek(fin, 0, SEEK_SET);
 
   // TODO need to clean up fin if this throws.
-  read<Crate>(fin, len, ret.get());
+  read<CrateFile>(fin, len, ret.get());
+
+  fclose(fin);
+
+  return ret;
+}
+
+// And the definition of readLibrary.
+std::unique_ptr<Library> readLibrary(const std::string& path) {
+  std::filesystem::path root_path{path};
+  std::filesystem::path serato_dir_path = root_path / "_Serato_";
+  std::filesystem::path database_path = serato_dir_path / "database V2";
+  std::filesystem::path crates_dir_path = serato_dir_path / "Subcrates";
+
+  FILE* database_fin = fopen(database_path.c_str(), "r");
+  if (database_fin == nullptr) {
+    throw ReadException("Could not open database file at path \"" + database_path.native() + "\"!");
+  }
+
+  fseek(database_fin, 0, SEEK_END);
+  size_t len = ftell(database_fin);
+  fseek(database_fin, 0, SEEK_SET);
+
+  DatabaseFile database_file;
+  read<DatabaseFile>(database_fin, len, &database_file);
+
+  fclose(database_fin);
+
+  std::unique_ptr<Library> ret = std::make_unique<Library>(database_file);
+
+  // TODO This does not correctly handle subcrates.
+  for (std::filesystem::path crate_path : std::filesystem::directory_iterator(crates_dir_path)) {
+    if (crate_path.extension() != ".crate") {
+      // Skip files like "database V2" and any other miscellaneous files.
+      continue;
+    }
+
+    // This could be more efficient (less copying). Oh well.
+    std::unique_ptr<CrateFile> crate_file = readCrate(crate_path.native());
+
+    ret->crates.emplace_back(*crate_file);
+  }
 
   return ret;
 }
@@ -142,12 +188,22 @@ std::unique_ptr<Crate> readCrate(const std::string& path) {
 // you must use read_repeated iff the member is a std::vector. Otherwise you'll get weird crashes
 // at runtime.
 template<>
-const std::map<std::string, Field> kFields<Crate> = {
-  {"vrsn", Field{.member = &Crate::version, .readfunc = read<std::string>}},
-  {"otrk", Field{.member = &Crate::tracks, .readfunc = read_repeated<Track>}},
+const std::map<std::string, Field> kFields<Track> = {
+  // When the track is in a crate file, the path is stored in a record called "ptrk". When the
+  // track is in the database file, the path is stored in a record called "pfil".
+  // TODO We probably want to have two different types of Track objects for the two cases.
+  {"ptrk", Field{.member = &Track::path, .readfunc = read<std::string>}},
+  {"pfil", Field{.member = &Track::path, .readfunc = read<std::string>}},
 };
 
 template<>
-const std::map<std::string, Field> kFields<Track> = {
-  {"ptrk", Field{.member = &Track::path, .readfunc = read<std::string>}},
+const std::map<std::string, Field> kFields<CrateFile> = {
+  {"vrsn", Field{.member = &CrateFile::version, .readfunc = read<std::string>}},
+  {"otrk", Field{.member = &CrateFile::tracks, .readfunc = read_repeated<Track>}},
+};
+
+template<>
+const std::map<std::string, Field> kFields<DatabaseFile> = {
+  {"vrsn", Field{.member = &DatabaseFile::version, .readfunc = read<std::string>}},
+  {"otrk", Field{.member = &DatabaseFile::tracks, .readfunc = read_repeated<Track>}},
 };
