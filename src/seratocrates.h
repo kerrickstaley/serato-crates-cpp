@@ -10,12 +10,12 @@ struct Track {
 struct CrateFile {
   std::string name;
   std::string version;
-  std::vector<Track> tracks;
+  std::vector<std::shared_ptr<Track>> tracks;
 };
 
 struct DatabaseFile {
   std::string version;
-  std::vector<Track> tracks;
+  std::vector<std::shared_ptr<Track>> tracks;
 };
 
 struct Crate : CrateFile {

@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
   std::cout << "Library contains " << library->tracks.size() << " tracks:\n";
   for (auto& track : library->tracks) {
     std::cout << '\n';
-    std::cout << "  Path: " << track.path << '\n';
+    std::cout << "  Path: " << track->path << '\n';
   }
 
   std::cout << '\n';
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 
     for (auto& track: crate.tracks) {
       std::cout << '\n';
-      std::cout << "    Path: " << track.path << '\n';
+      std::cout << "    Path: " << track->path << '\n';
     }
   }
 }

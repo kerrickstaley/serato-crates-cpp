@@ -107,6 +107,16 @@ void read<std::string>(ReadContext* ctx, const size_t bytes, void* str_void) {
   *str = std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t>{}.to_bytes(utf16_string);
 }
 
+// Next, specialization of read<T> for shared_ptr<Track>
+// TODO It would be nice if I could write this generically for any shared_ptr<T>, but I think C++
+// makes that hard.
+template<>
+void read<std::shared_ptr<Track>>(ReadContext* ctx, const size_t bytes, void* shared_ptr_void) {
+  std::shared_ptr<Track>& sp = *static_cast<std::shared_ptr<Track>*>(shared_ptr_void);
+  sp = std::make_shared<Track>();
+  read<Track>(ctx, bytes, sp.get());
+}
+
 // Next, definition of read_repeated<T>() (works for both objects and primitive datatypes).
 
 // We take a void* rather than a std::vector<T>* so that all read_repeated<T> instantiations have
@@ -206,11 +216,11 @@ const std::map<std::string, Field> kFields<Track> = {
 template<>
 const std::map<std::string, Field> kFields<CrateFile> = {
   {"vrsn", Field{.member = &CrateFile::version, .readfunc = read<std::string>}},
-  {"otrk", Field{.member = &CrateFile::tracks, .readfunc = read_repeated<Track>}},
+  {"otrk", Field{.member = &CrateFile::tracks, .readfunc = read_repeated<std::shared_ptr<Track>>}},
 };
 
 template<>
 const std::map<std::string, Field> kFields<DatabaseFile> = {
   {"vrsn", Field{.member = &DatabaseFile::version, .readfunc = read<std::string>}},
-  {"otrk", Field{.member = &DatabaseFile::tracks, .readfunc = read_repeated<Track>}},
+  {"otrk", Field{.member = &DatabaseFile::tracks, .readfunc = read_repeated<std::shared_ptr<Track>>}},
 };
