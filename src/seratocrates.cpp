@@ -20,8 +20,12 @@
 // For more information, including the specifics of the on-disk format, see
 // https://www.mixxx.org/wiki/doku.php/serato_database_format
 
+struct ReadContext {
+  FILE *file;
+};
+
 // First, some forward declarations.
-typedef void (*ReadFunc)(FILE* file, size_t bytes, void* obj);
+typedef void (*ReadFunc)(ReadContext* ctx, size_t bytes, void* obj);
 
 struct Field {
   MemberPointer member;
@@ -39,27 +43,27 @@ const size_t kRecordSizeSize = 4;
 // We take a void* rather than a T* so that all read<T> instantiations have the same signature,
 // which allows them to be placed in the same container.
 template<typename T>
-void read(FILE* file, const size_t bytes, void* obj_void) {
+void read(ReadContext* ctx, const size_t bytes, void* obj_void) {
   T* obj = static_cast<T*>(obj_void);
   size_t bytes_read = 0;
   while (bytes_read < bytes) {
     // Read tag.
     std::string tag(kTagSize, '\0');
-    if (kTagSize != fread(tag.data(), 1, kTagSize, file)) {
+    if (kTagSize != fread(tag.data(), 1, kTagSize, ctx->file)) {
       throw ReadException(
           "File was truncated when reading tag (at offset "
-          + std::to_string(ftell(file)) + ")!");
+          + std::to_string(ftell(ctx->file)) + ")!");
     }
     bytes_read += kTagSize;
 
     // Read size. It's stored as a big-endian 4-byte unsigned int.
     size_t record_size = 0;
     for (size_t i = 0; i < kRecordSizeSize; i++) {
-      int byte = fgetc(file);
+      int byte = fgetc(ctx->file);
       if (byte == EOF) {
         throw ReadException(
             "File was truncated when reading field size (at offset "
-            + std::to_string(ftell(file)) + ")!");
+            + std::to_string(ftell(ctx->file)) + ")!");
       }
       record_size <<= 8;
       record_size += byte;
@@ -69,30 +73,30 @@ void read(FILE* file, const size_t bytes, void* obj_void) {
 
     if (!kFields<T>.count(tag)) {
       // Field is not supported, ignore it.
-      fseek(file, record_size, SEEK_CUR);
+      fseek(ctx->file, record_size, SEEK_CUR);
       continue;
     }
     Field field = kFields<T>.at(tag);
     void* member = &(obj->*static_cast<char T::*>(field.member));
-    field.readfunc(file, record_size, member);
+    field.readfunc(ctx, record_size, member);
   }
 }
 
 // Next, specializations of read<T>() for primitive datatypes.
 template<>
-void read<std::string>(FILE* file, const size_t bytes, void* str_void) {
+void read<std::string>(ReadContext* ctx, const size_t bytes, void* str_void) {
   std::string* str = static_cast<std::string*>(str_void);
   std::u16string utf16_string;
 
   for (size_t i = 0; i < bytes / 2; i++) {
     char16_t c = 0;
-    int b = fgetc(file);
+    int b = fgetc(ctx->file);
     if (b == EOF) {
       throw ReadException("Crate file was truncated when reading string");
     }
     c |= b << 8;
 
-    b = fgetc(file);
+    b = fgetc(ctx->file);
     if (b == EOF) {
       throw ReadException("Crate file was truncated when reading string");
     }
@@ -108,11 +112,11 @@ void read<std::string>(FILE* file, const size_t bytes, void* str_void) {
 // We take a void* rather than a std::vector<T>* so that all read_repeated<T> instantiations have
 // the same signature, which allows them to be placed in the same container.
 template<typename T>
-void read_repeated(FILE* file, const size_t bytes, void* obj_vec_void) {
+void read_repeated(ReadContext* ctx, const size_t bytes, void* obj_vec_void) {
   std::vector<T>* obj_vec = static_cast<std::vector<T>*>(obj_vec_void);
   obj_vec->emplace_back();
   void* obj = &obj_vec->back();
-  read<T>(file, bytes, obj);
+  read<T>(ctx, bytes, obj);
 }
 
 // Next, definition of readCrate.
@@ -125,19 +129,20 @@ std::unique_ptr<CrateFile> readCrate(const std::string& path) {
   // work.
   ret->name = std::filesystem::path(path).stem();
 
-  FILE* fin = fopen(path.c_str(), "r");
-  if (fin == nullptr) {
+  ReadContext ctx{};
+  ctx.file = fopen(path.c_str(), "r");
+  if (ctx.file == nullptr) {
     throw ReadException("Could not open .crate file at path " + path);
   }
 
-  fseek(fin, 0, SEEK_END);
-  size_t len = ftell(fin);
-  fseek(fin, 0, SEEK_SET);
+  fseek(ctx.file, 0, SEEK_END);
+  size_t len = ftell(ctx.file);
+  fseek(ctx.file, 0, SEEK_SET);
 
   // TODO need to clean up fin if this throws.
-  read<CrateFile>(fin, len, ret.get());
+  read<CrateFile>(&ctx, len, ret.get());
 
-  fclose(fin);
+  fclose(ctx.file);
 
   return ret;
 }
@@ -149,19 +154,20 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
   std::filesystem::path database_path = serato_dir_path / "database V2";
   std::filesystem::path crates_dir_path = serato_dir_path / "Subcrates";
 
-  FILE* database_fin = fopen(database_path.c_str(), "r");
-  if (database_fin == nullptr) {
+  ReadContext ctx{};
+  ctx.file = fopen(database_path.c_str(), "r");
+  if (ctx.file == nullptr) {
     throw ReadException("Could not open database file at path \"" + database_path.native() + "\"!");
   }
 
-  fseek(database_fin, 0, SEEK_END);
-  size_t len = ftell(database_fin);
-  fseek(database_fin, 0, SEEK_SET);
+  fseek(ctx.file, 0, SEEK_END);
+  size_t len = ftell(ctx.file);
+  fseek(ctx.file, 0, SEEK_SET);
 
   DatabaseFile database_file;
-  read<DatabaseFile>(database_fin, len, &database_file);
+  read<DatabaseFile>(&ctx, len, &database_file);
 
-  fclose(database_fin);
+  fclose(ctx.file);
 
   std::unique_ptr<Library> ret = std::make_unique<Library>(database_file);
 
