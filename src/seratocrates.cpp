@@ -5,43 +5,40 @@
 #include "seratocrates.h"
 #include "read_disk_files.h"
 
-// Next, definition of readCrate.
-std::unique_ptr<CrateFile> readCrate(const std::string& path) {
-  std::unique_ptr<CrateFile> ret = readFromPath<CrateFile>(path);
 
-  // The crate's name is not actually stored in the .crate file itself; it's only stored in the
-  // filename.
-  // Populate ret->name based on the filename, then call read<CrateFile>() to do the rest of the
-  // work.
-  ret->name = std::filesystem::path(path).stem();
-
-  return ret;
-}
-
-std::vector<Crate> getCratesFromCrateFiles(const std::vector<CrateFile>& crate_files,
-                                           const std::vector<std::shared_ptr<Track>>& tracks) {
-  std::unordered_map<std::string, const std::shared_ptr<Track>*> path_to_track;
-  for (const std::shared_ptr<Track>& track : tracks) {
-    path_to_track[track->path] = &track;
+class CrateReader {
+public:
+  CrateReader(const std::vector<std::shared_ptr<Track>>& library_tracks) {
+    for (const std::shared_ptr<Track>& track : library_tracks) {
+      path_to_track_[track->path] = track;
+    }
   }
 
-  std::vector<Crate> ret;
+  Crate read(const std::string& path) {
+    CrateFile crate_file = *readFromPath<CrateFile>(path);
+    Crate ret = crate_file;
 
-  for (const CrateFile& crate_file : crate_files) {
-    ret.emplace_back(crate_file);
+    // Populate Crate::name. The crate's name is not actually stored in the .crate file itself;
+    // it's only stored in the filename.
+    ret.name = std::filesystem::path(path).stem();
+
     for (const CrateFileTrack& crate_file_track : crate_file.tracks) {
-      auto itr = path_to_track.find(crate_file_track.path);
-      if (itr == path_to_track.end()) {
+      auto itr = path_to_track_.find(crate_file_track.path);
+      if (itr == path_to_track_.end()) {
         // Crate track was not in database, silently ignore it.
         continue;
       }
-      ret.back().tracks.push_back(*itr->second);
+      ret.tracks.push_back(itr->second);
     }
-  }
-  return ret;
-}
 
-// And the definition of readLibrary.
+    return ret;
+  }
+
+private:
+  std::unordered_map<std::string, std::shared_ptr<Track>> path_to_track_;
+};
+
+
 std::unique_ptr<Library> readLibrary(const std::string& path) {
   std::filesystem::path root_path{path};
   std::filesystem::path serato_dir_path = root_path / "_Serato_";
@@ -49,9 +46,11 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
   std::filesystem::path crates_dir_path = serato_dir_path / "Subcrates";
 
   std::unique_ptr<DatabaseFile> database_file = readFromPath<DatabaseFile>(database_path.native());
+  std::unique_ptr<Library> ret = std::make_unique<Library>(*database_file);
+
+  CrateReader crate_reader(database_file->tracks);
 
   // TODO This does not correctly handle subcrates.
-  std::vector<CrateFile> crate_files;
   for (std::filesystem::path crate_path : std::filesystem::directory_iterator(crates_dir_path)) {
     if (crate_path.extension() != ".crate") {
       // All files in this folder should be .crate files, but just in case skip file if it doesn't
@@ -59,15 +58,8 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
       continue;
     }
 
-    // This could be more efficient (less copying). Oh well.
-    std::unique_ptr<CrateFile> crate_file = readCrate(crate_path.native());
-
-    crate_files.emplace_back(*crate_file);
+    ret->crates.push_back(crate_reader.read(crate_path.native()));
   }
-
-  std::unique_ptr<Library> ret = std::make_unique<Library>(*database_file);
-
-  ret->crates = getCratesFromCrateFiles(crate_files, database_file->tracks);
 
   return ret;
 }

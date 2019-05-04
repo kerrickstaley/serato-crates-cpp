@@ -35,10 +35,9 @@ struct CrateFile {
   std::string version;
   std::vector<CrateFileTrack> tracks;
 
-  // Note: This cast operator doesn't populate Crate::tracks!
+  // Note: This cast operator doesn't populate Crate::name or Crate::tracks!
   operator Crate() const {
     Crate ret{};
-    ret.name = name;
     ret.version = version;
     return ret;
   }
