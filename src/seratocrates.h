@@ -7,20 +7,16 @@ struct Track {
   std::string path;
 };
 
-struct CrateFile {
-  std::string name;
-  std::string version;
-  std::vector<std::shared_ptr<Track>> tracks;
-};
-
 struct DatabaseFile {
   std::string version;
   std::vector<std::shared_ptr<Track>> tracks;
 };
 
-struct Crate : CrateFile {
+struct Crate {
+  std::string name;
+  std::string version;
+  std::vector<std::shared_ptr<Track>> tracks;
   std::vector<Crate> subcrates;
-  Crate(const CrateFile& crate_file) : CrateFile(crate_file) {}
 };
 
 struct Library : DatabaseFile {
@@ -33,7 +29,6 @@ public:
   using runtime_error::runtime_error;
 };
 
-std::unique_ptr<CrateFile> readCrate(const std::string& path);
 // readLibrary takes the path to the directory containing the _Serato_ folder (not the path to the
 // _Serato_ folder itself).
 std::unique_ptr<Library> readLibrary(const std::string& path);

@@ -5,6 +5,7 @@
 #include <locale>
 #include <map>
 #include <filesystem>
+#include <unordered_map>
 
 // Serato .crate files each encode exactly one root Crate object. Each Crate object contains
 // several fields. Each field may be a primitive datatype or an object. Each field may be
@@ -20,11 +21,12 @@
 // For more information, including the specifics of the on-disk format, see
 // https://www.mixxx.org/wiki/doku.php/serato_database_format
 
+// First, some forward declarations.
+
 struct ReadContext {
   FILE *file;
 };
 
-// First, some forward declarations.
 typedef void (*ReadFunc)(ReadContext* ctx, size_t bytes, void* obj);
 
 struct Field {
@@ -34,6 +36,24 @@ struct Field {
 
 template<typename T>
 const std::map<std::string, Field> kFields;
+
+struct CrateFileTrack {
+  std::string path;
+};
+
+struct CrateFile {
+  std::string name;
+  std::string version;
+  std::vector<CrateFileTrack> tracks;
+
+  // Note: This cast operator doesn't populate Crate::tracks!
+  operator Crate() const {
+    Crate ret{};
+    ret.name = name;
+    ret.version = version;
+    return ret;
+  }
+};
 
 // Next, the definition of read<T>() for objects. Objects aren't primitive datatypes but instead
 // contain several fields, each of which may be a primitive datatype or another object.
@@ -157,6 +177,29 @@ std::unique_ptr<CrateFile> readCrate(const std::string& path) {
   return ret;
 }
 
+std::vector<Crate> getCratesFromCrateFiles(const std::vector<CrateFile>& crate_files,
+                                           const std::vector<std::shared_ptr<Track>>& tracks) {
+  std::unordered_map<std::string, const std::shared_ptr<Track>*> path_to_track;
+  for (const std::shared_ptr<Track>& track : tracks) {
+    path_to_track[track->path] = &track;
+  }
+
+  std::vector<Crate> ret;
+
+  for (const CrateFile& crate_file : crate_files) {
+    ret.emplace_back(crate_file);
+    for (const CrateFileTrack& crate_file_track : crate_file.tracks) {
+      auto itr = path_to_track.find(crate_file_track.path);
+      if (itr == path_to_track.end()) {
+        // Crate track was not in database, silently ignore it.
+        continue;
+      }
+      ret.back().tracks.push_back(*itr->second);
+    }
+  }
+  return ret;
+}
+
 // And the definition of readLibrary.
 std::unique_ptr<Library> readLibrary(const std::string& path) {
   std::filesystem::path root_path{path};
@@ -179,9 +222,8 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
 
   fclose(ctx.file);
 
-  std::unique_ptr<Library> ret = std::make_unique<Library>(database_file);
-
   // TODO This does not correctly handle subcrates.
+  std::vector<CrateFile> crate_files;
   for (std::filesystem::path crate_path : std::filesystem::directory_iterator(crates_dir_path)) {
     if (crate_path.extension() != ".crate") {
       // All files in this folder should be .crate files, but just in case skip file if it doesn't
@@ -192,8 +234,12 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
     // This could be more efficient (less copying). Oh well.
     std::unique_ptr<CrateFile> crate_file = readCrate(crate_path.native());
 
-    ret->crates.emplace_back(*crate_file);
+    crate_files.emplace_back(*crate_file);
   }
+
+  std::unique_ptr<Library> ret = std::make_unique<Library>(database_file);
+
+  ret->crates = getCratesFromCrateFiles(crate_files, database_file.tracks);
 
   return ret;
 }
@@ -206,17 +252,19 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
 // at runtime.
 template<>
 const std::map<std::string, Field> kFields<Track> = {
-  // When the track is in a crate file, the path is stored in a record called "ptrk". When the
-  // track is in the database file, the path is stored in a record called "pfil".
-  // TODO We probably want to have two different types of Track objects for the two cases.
-  {"ptrk", Field{.member = &Track::path, .readfunc = read<std::string>}},
   {"pfil", Field{.member = &Track::path, .readfunc = read<std::string>}},
+};
+
+
+template<>
+const std::map<std::string, Field> kFields<CrateFileTrack> = {
+  {"ptrk", Field{.member = &Track::path, .readfunc = read<std::string>}},
 };
 
 template<>
 const std::map<std::string, Field> kFields<CrateFile> = {
   {"vrsn", Field{.member = &CrateFile::version, .readfunc = read<std::string>}},
-  {"otrk", Field{.member = &CrateFile::tracks, .readfunc = read_repeated<std::shared_ptr<Track>>}},
+  {"otrk", Field{.member = &CrateFile::tracks, .readfunc = read_repeated<CrateFileTrack>}},
 };
 
 template<>
