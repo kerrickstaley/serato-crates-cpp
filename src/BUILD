@@ -2,6 +2,7 @@ cc_library(
     name = "seratocrates",
     srcs = [
         "memberpointer.h",
+        "read_disk_files.h",
         "seratocrates.cpp",
     ],
     hdrs = [
