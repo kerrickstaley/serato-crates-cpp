@@ -166,6 +166,30 @@ void read_repeated(ReadContext* ctx, const size_t bytes, void* obj_vec_void) {
   read<T>(ctx, bytes, obj);
 }
 
+// Next, definition of read_from_path which reads a whole file (DatabaseFile or CrateFile) and
+// returns it as a unique_ptr.
+template<typename T>
+std::unique_ptr<T> readFromPath(const std::string& path) {
+  std::unique_ptr<T> ret = std::make_unique<T>();
+
+  ReadContext ctx{};
+  ctx.file = fopen(path.c_str(), "r");
+  if (ctx.file == nullptr) {
+    throw ReadException("Could not open file at path " + path);
+  }
+
+  fseek(ctx.file, 0, SEEK_END);
+  size_t len = ftell(ctx.file);
+  fseek(ctx.file, 0, SEEK_SET);
+
+  // TODO need to clean up fin if this throws.
+  read<T>(&ctx, len, ret.get());
+
+  fclose(ctx.file);
+
+  return ret;
+}
+
 // Finally, the rest of this file gives kFields for each object type. kFields specifies what
 // fields the type has and how they should be read from disk.
 

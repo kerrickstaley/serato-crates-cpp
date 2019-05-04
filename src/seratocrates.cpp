@@ -7,28 +7,13 @@
 
 // Next, definition of readCrate.
 std::unique_ptr<CrateFile> readCrate(const std::string& path) {
-  std::unique_ptr<CrateFile> ret = std::make_unique<CrateFile>();
+  std::unique_ptr<CrateFile> ret = readFromPath<CrateFile>(path);
 
   // The crate's name is not actually stored in the .crate file itself; it's only stored in the
   // filename.
   // Populate ret->name based on the filename, then call read<CrateFile>() to do the rest of the
   // work.
   ret->name = std::filesystem::path(path).stem();
-
-  ReadContext ctx{};
-  ctx.file = fopen(path.c_str(), "r");
-  if (ctx.file == nullptr) {
-    throw ReadException("Could not open .crate file at path " + path);
-  }
-
-  fseek(ctx.file, 0, SEEK_END);
-  size_t len = ftell(ctx.file);
-  fseek(ctx.file, 0, SEEK_SET);
-
-  // TODO need to clean up fin if this throws.
-  read<CrateFile>(&ctx, len, ret.get());
-
-  fclose(ctx.file);
 
   return ret;
 }
@@ -63,20 +48,7 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
   std::filesystem::path database_path = serato_dir_path / "database V2";
   std::filesystem::path crates_dir_path = serato_dir_path / "Subcrates";
 
-  ReadContext ctx{};
-  ctx.file = fopen(database_path.c_str(), "r");
-  if (ctx.file == nullptr) {
-    throw ReadException("Could not open database file at path \"" + database_path.native() + "\"!");
-  }
-
-  fseek(ctx.file, 0, SEEK_END);
-  size_t len = ftell(ctx.file);
-  fseek(ctx.file, 0, SEEK_SET);
-
-  DatabaseFile database_file;
-  read<DatabaseFile>(&ctx, len, &database_file);
-
-  fclose(ctx.file);
+  std::unique_ptr<DatabaseFile> database_file = readFromPath<DatabaseFile>(database_path.native());
 
   // TODO This does not correctly handle subcrates.
   std::vector<CrateFile> crate_files;
@@ -93,9 +65,9 @@ std::unique_ptr<Library> readLibrary(const std::string& path) {
     crate_files.emplace_back(*crate_file);
   }
 
-  std::unique_ptr<Library> ret = std::make_unique<Library>(database_file);
+  std::unique_ptr<Library> ret = std::make_unique<Library>(*database_file);
 
-  ret->crates = getCratesFromCrateFiles(crate_files, database_file.tracks);
+  ret->crates = getCratesFromCrateFiles(crate_files, database_file->tracks);
 
   return ret;
 }
