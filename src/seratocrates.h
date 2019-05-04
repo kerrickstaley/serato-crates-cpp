@@ -9,11 +9,6 @@ struct Track {
   std::string path;
 };
 
-struct DatabaseFile {
-  std::string version;
-  std::vector<std::shared_ptr<Track>> tracks;
-};
-
 struct Crate {
   std::string name;
   std::string version;
@@ -21,9 +16,10 @@ struct Crate {
   std::vector<Crate> subcrates;
 };
 
-struct Library : DatabaseFile {
+struct Library {
+  std::string version;
+  std::vector<std::shared_ptr<Track>> tracks;
   std::vector<Crate> crates;
-  Library(const DatabaseFile& database_file) : DatabaseFile(database_file) {}
 };
 
 class ReadException : public std::runtime_error {

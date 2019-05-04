@@ -44,6 +44,19 @@ struct CrateFile {
   }
 };
 
+struct DatabaseFile {
+  std::string version;
+  std::vector<std::shared_ptr<Track>> tracks;
+
+  // Note: This cast operator doesn't populate Library::crates!
+  operator Library() const {
+    Library ret{};
+    ret.version = version;
+    ret.tracks = tracks;
+    return ret;
+  }
+};
+
 // Next, other structs and declarations we need.
 
 struct ReadContext {
