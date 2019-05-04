@@ -72,7 +72,7 @@ void read(ReadContext* ctx, const size_t bytes, void* obj_void) {
     bytes_read += record_size;
 
     if (!kFields<T>.count(tag)) {
-      // Field is not supported, ignore it.
+      // Field is not supported, silently ignore it.
       fseek(ctx->file, record_size, SEEK_CUR);
       continue;
     }
