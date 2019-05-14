@@ -39,6 +39,45 @@ private:
 };
 
 
+// Helper used in nestCrates
+int crateLevel(const Crate& crate) {
+  int ret = 0;
+  for (size_t i = 0; i < crate.name.size(); i++) {
+    if (crate.name[i] == '%' && crate.name[i + 1] == '%') {
+      ret += 1;
+      i++;
+    }
+  }
+  return ret;
+}
+
+
+// Take flat list of crates and create nested crate structure.
+// In this function's inputs, subcrates are named like "GrandparentCrate%%ParentCrate%%Crate".
+// In the output, there will be a crate called "GrandparentCrate" with a child called "ParentCrate"
+// which itself has a child called "Crate".
+// Destroys input.
+std::vector<Crate> nestCrates(std::vector<Crate>&& crates) {
+  struct CompareCratesByLevel {
+    int operator()(const Crate& a, const Crate& b) {
+      return crateLevel(a) < crateLevel(b);
+    }
+  };
+
+  std::sort(crates, CompareCratesByLevel());
+
+  std::vector<Crate> ret;
+  std::unordered_map<std::string, Crate*> name_to_crate;
+
+  for (size_t i = 0; i < crates.size() && crateLevel(crates[i]) == 0; i++) {
+    ret.emplace_back(std::move(crates[i]));
+  }
+
+
+
+}
+
+
 std::unique_ptr<Library> readLibrary(const std::string& path) {
   std::filesystem::path root_path{path};
   std::filesystem::path serato_dir_path = root_path / "_Serato_";
