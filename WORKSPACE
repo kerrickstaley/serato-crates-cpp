@@ -11,7 +11,9 @@ http_archive(
 
 http_archive(
     name = "kerrick_library_test_data",
+    build_file = "//tests:BUILD.test_data",
     sha256 = "39659500c2ce89e8a2e9a327a9a9b0d28fb90b7d700a4712197a2e0c2636201f",
+    type = "tar.gz",
     urls = [
         "https://drive.google.com/a/kerrickstaley.com/uc?id=1fDbqM9jV531SsXxx5qbCE2B2tnCfahwE",
     ],
